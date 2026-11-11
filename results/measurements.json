@@ -1,0 +1,70 @@
+{
+  "measured_at_unix": 1794369116.8758726,
+  "layers": {
+    "flights": {
+      "source": "OpenSky Network /api/states/all (anonymous)",
+      "response_bytes": 821216,
+      "fetch_latency_ms": 2657,
+      "feed_epoch": 1794369110,
+      "staleness_s_at_fetch": 9.6,
+      "states_total": 6259,
+      "positioned": 6210,
+      "on_ground": 757,
+      "median_position_age_s": 1,
+      "coverage": {
+        "probe_boxes": {
+          "Continental US": 3139,
+          "Europe": 548,
+          "Mid-Atlantic": 6,
+          "Mid-Pacific": 27,
+          "Indian Ocean": 0,
+          "Southern Ocean": 25
+        },
+        "ocean_box_aircraft": 58,
+        "land_box_aircraft": 3687,
+        "ocean_share_of_all_pct": 0.93
+      }
+    },
+    "satellites": {
+      "source": "CelesTrak GP, GROUP=active, FORMAT=tle",
+      "response_bytes": 2668176,
+      "fetch_latency_ms": 3013,
+      "elements_total": 15882,
+      "propagated_ok": 15882,
+      "propagation_failed": 0,
+      "median_epoch_age_h": 25.564163825644385
+    },
+    "earthquakes": {
+      "source": "USGS 2.5_day GeoJSON",
+      "response_bytes": 25236,
+      "fetch_latency_ms": 1293,
+      "feed_epoch": 1794369096.0,
+      "staleness_s_at_fetch": 28.1,
+      "count": 35,
+      "max_mag": 5.6,
+      "count_m45_plus": 15
+    },
+    "wildfires": {
+      "source": "NASA FIRMS",
+      "state": "off",
+      "reason": "No FIRMS_MAP_KEY configured; key requires the operator's own free signup. Layer ships in the documented off state."
+    }
+  },
+  "claims": [
+    {
+      "claim": "10,000+ aircraft tracked live",
+      "measured": 6210,
+      "reading": "The count is a property of the free public feed and the time of day, not of any dashboard's engineering. Our measured count right now is the number above."
+    },
+    {
+      "claim": "2,000+ satellites tracked",
+      "measured": 15882,
+      "reading": "The public active catalogue holds far more objects than the marketing number; positions are computed from published element sets, not 'tracked' by the dashboard."
+    },
+    {
+      "claim": "Every earthquake, live",
+      "measured": 35,
+      "reading": "This is the USGS magnitude-2.5+ feed for the last 24 hours: reviewed, delayed by minutes, and blind to smaller events by design."
+    }
+  ]
+}
