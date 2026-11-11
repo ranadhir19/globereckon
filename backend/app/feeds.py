@@ -216,12 +216,17 @@ def parse_usgs(payload: dict) -> dict:
         if len(coords) < 2 or coords[0] is None or coords[1] is None:
             continue
         mag = props.get("mag")
+        t_ms = props.get("time")
         points.append({
             "lat": round(float(coords[1]), 4),
             "lng": round(float(coords[0]), 4),
             "alt_km": 0.0,
             "label": f"M{mag} {props.get('place') or ''}".strip(),
             "mag": mag,
+            "time_epoch": (t_ms / 1000.0) if isinstance(t_ms, (int, float)) else None,
+            "depth_km": float(coords[2]) if len(coords) > 2 and coords[2] is not None else None,
+            "place": props.get("place"),
+            "source_id": feat.get("id"),
         })
         if isinstance(mag, (int, float)):
             mags.append(float(mag))
@@ -273,4 +278,393 @@ def fetch_firms() -> dict | None:
     body, latency_ms, _ = _fetch(FIRMS_URL.format(key=key), timeout=120.0)
     parsed = parse_firms_csv(body.decode("utf-8", "replace"))
     parsed["_fetch"] = {"latency_ms": latency_ms, "response_bytes": len(body)}
+    return parsed
+
+
+# ==========================================================================
+# Round 2 sources (added 2026-11-10). Each was verified live before wiring;
+# per-source licence verdicts live in DATA_SOURCES.md sections 6-13.
+# ==========================================================================
+
+CELESTRAK_GROUP_URL = ("https://celestrak.org/NORAD/elements/gp.php"
+                       "?GROUP={group}&FORMAT=tle")
+CNEOS_URL = "https://ssd-api.jpl.nasa.gov/fireball.api?limit=100"
+SWPC_KP_URL = "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json"
+SWPC_WIND_URL = "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json"
+NHC_URL = "https://www.nhc.noaa.gov/CurrentStorms.json"
+EMSC_URL = ("https://www.seismicportal.eu/fdsnws/event/1/query"
+            "?format=json&limit=1000&minmag=2.5"
+            "&start={start}&end={end}")
+AIS_URL = "https://meri.digitraffic.fi/api/ais/v1/locations"
+NDBC_URL = "https://www.ndbc.noaa.gov/data/latest_obs/latest_obs.txt"
+WFIGS_URL = ("https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/"
+             "services/WFIGS_Incident_Locations_Current/FeatureServer/0/query"
+             "?where=1%3D1"
+             "&outFields=IncidentName,IncidentSize,PercentContained,"
+             "POOState,POOCounty,FireDiscoveryDateTime"
+             "&returnGeometry=true&f=geojson&resultRecordCount=2000")
+
+
+def _iso_epoch(text: str | None) -> float | None:
+    """Parse the ISO-8601 variants the round-2 feeds use (assume UTC)."""
+    if not text:
+        return None
+    t = str(text).strip().replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(t)
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                dt = datetime.strptime(str(text).strip(), fmt)
+                break
+            except ValueError:
+                continue
+        else:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
+def _fetch_json(url: str, timeout: float = 90.0):
+    body, latency_ms, _ = _fetch(url, timeout=timeout)
+    import json
+    return json.loads(body), {"latency_ms": latency_ms,
+                              "response_bytes": len(body)}
+
+
+def fetch_tle_group(group: str) -> dict:
+    body, latency_ms, _ = _fetch(CELESTRAK_GROUP_URL.format(group=group))
+    parsed = parse_tle_propagate(body.decode("utf-8", "replace"), time.time())
+    parsed["_fetch"] = {"latency_ms": latency_ms, "response_bytes": len(body)}
+    return parsed
+
+
+# --------------------------------------------------------------------------
+# NASA/JPL CNEOS — fireball / bolide events (US Government sensors via JPL)
+# --------------------------------------------------------------------------
+
+def parse_cneos(payload: dict) -> dict:
+    fields = payload.get("fields") or []
+    idx = {name: i for i, name in enumerate(fields)}
+    points: list[dict] = []
+    impacts: list[float] = []
+    epochs: list[float] = []
+    for row in payload.get("data") or []:
+        def get(name):
+            i = idx.get(name)
+            return row[i] if i is not None and i < len(row) else None
+        lat_raw, lon_raw = get("lat"), get("lon")
+        if lat_raw is None or lon_raw is None:
+            continue
+        try:
+            lat = float(lat_raw) * (-1 if get("lat-dir") == "S" else 1)
+            lng = float(lon_raw) * (-1 if get("lon-dir") == "W" else 1)
+            impact = float(get("impact-e")) if get("impact-e") else None
+            alt = float(get("alt")) if get("alt") else 0.0
+        except (TypeError, ValueError):
+            continue
+        epoch = _iso_epoch(get("date"))
+        if epoch is not None:
+            epochs.append(epoch)
+        if impact is not None:
+            impacts.append(impact)
+        points.append({
+            "lat": round(lat, 3), "lng": round(lng, 3),
+            "alt_km": alt,
+            "label": (f"{get('date')} fireball"
+                      + (f" — impact energy {impact} kt" if impact is not None else "")),
+            "impact_kt": impact, "time_epoch": epoch,
+            "date": get("date"), "vel_kms": get("vel"),
+        })
+    points.sort(key=lambda p: p["time_epoch"] or 0, reverse=True)
+    return {
+        "points": points,
+        "count": len(points),
+        "rows_total": len(payload.get("data") or []),
+        "max_impact_kt": max(impacts) if impacts else None,
+        "feed_epoch": max(epochs) if epochs else None,
+        "oldest_epoch": min(epochs) if epochs else None,
+    }
+
+
+def fetch_cneos() -> dict:
+    parsed, fetch = None, None
+    payload, fetch = _fetch_json(CNEOS_URL)
+    parsed = parse_cneos(payload)
+    parsed["_fetch"] = fetch
+    return parsed
+
+
+# --------------------------------------------------------------------------
+# NOAA SWPC — space weather: planetary K-index + real-time solar wind.
+# Panel layer (no globe points): the honest object is a number, not a dot.
+# --------------------------------------------------------------------------
+
+def parse_swpc_kp(payload: list) -> dict:
+    rows = [r for r in payload if r.get("estimated_kp") is not None]
+    if not rows:
+        return {"latest_kp": None, "latest_epoch": None, "entries": 0,
+                "max_kp_24h": None}
+    latest = rows[-1]
+    latest_epoch = _iso_epoch(latest.get("time_tag"))
+    recent = [r for r in rows
+              if latest_epoch and (_iso_epoch(r.get("time_tag")) or 0)
+              >= latest_epoch - 86400]
+    return {
+        "latest_kp": latest.get("estimated_kp"),
+        "latest_kp_index": latest.get("kp_index"),
+        "latest_epoch": latest_epoch,
+        "entries": len(rows),
+        "max_kp_24h": max(r["estimated_kp"] for r in recent) if recent else None,
+    }
+
+
+def parse_swpc_wind(payload: list) -> dict:
+    active = [r for r in payload
+              if r.get("active") and r.get("proton_speed") is not None]
+    if not active:
+        active = [r for r in payload if r.get("proton_speed") is not None]
+    if not active:
+        return {"speed_kms": None, "density_pcc": None, "source": None,
+                "epoch": None, "entries": 0}
+    # rtsw rows arrive newest-first within each source block; take the
+    # newest active row overall.
+    best = max(active, key=lambda r: _iso_epoch(r.get("time_tag")) or 0)
+    return {
+        "speed_kms": best.get("proton_speed"),
+        "density_pcc": best.get("proton_density"),
+        "temperature_k": best.get("proton_temperature"),
+        "source": best.get("source"),
+        "epoch": _iso_epoch(best.get("time_tag")),
+        "entries": len(payload),
+    }
+
+
+def fetch_spaceweather() -> dict:
+    kp_payload, kp_fetch = _fetch_json(SWPC_KP_URL)
+    wind_payload, wind_fetch = _fetch_json(SWPC_WIND_URL, timeout=120.0)
+    return {
+        "kp": parse_swpc_kp(kp_payload),
+        "wind": parse_swpc_wind(wind_payload),
+        "_fetch": {"latency_ms": kp_fetch["latency_ms"] + wind_fetch["latency_ms"],
+                   "response_bytes": kp_fetch["response_bytes"]
+                   + wind_fetch["response_bytes"]},
+    }
+
+
+# --------------------------------------------------------------------------
+# NOAA NHC — active tropical cyclones (often honestly zero)
+# --------------------------------------------------------------------------
+
+def parse_nhc(payload: dict) -> dict:
+    points: list[dict] = []
+    epochs: list[float] = []
+    for s in payload.get("activeStorms") or []:
+        lat, lng = s.get("latitudeNumeric"), s.get("longitudeNumeric")
+        if lat is None or lng is None:
+            continue
+        epoch = _iso_epoch(s.get("lastUpdate"))
+        if epoch is not None:
+            epochs.append(epoch)
+        points.append({
+            "lat": round(float(lat), 3), "lng": round(float(lng), 3),
+            "alt_km": 0.0,
+            "label": (f"{s.get('name') or s.get('id')} — "
+                      f"{s.get('classification') or ''} "
+                      f"{s.get('intensity') or ''} kt").strip(),
+            "name": s.get("name"), "classification": s.get("classification"),
+            "intensity_kt": s.get("intensity"), "pressure_mb": s.get("pressure"),
+            "time_epoch": epoch,
+            "track_cone_kmz": (s.get("trackCone") or {}).get("kmzFile"),
+        })
+    return {"points": points, "count": len(points),
+            "feed_epoch": max(epochs) if epochs else None}
+
+
+def fetch_nhc() -> dict:
+    payload, fetch = _fetch_json(NHC_URL)
+    parsed = parse_nhc(payload)
+    parsed["_fetch"] = fetch
+    return parsed
+
+
+# --------------------------------------------------------------------------
+# EMSC SeismicPortal — second, independent earthquake catalogue (CC BY 4.0)
+# --------------------------------------------------------------------------
+
+def emsc_url(at_unix: float) -> str:
+    fmt = "%Y-%m-%dT%H:%M:%S"
+    start = datetime.fromtimestamp(at_unix - 86400, tz=timezone.utc).strftime(fmt)
+    end = datetime.fromtimestamp(at_unix, tz=timezone.utc).strftime(fmt)
+    return EMSC_URL.format(start=start, end=end)
+
+
+def parse_emsc(payload: dict) -> dict:
+    points: list[dict] = []
+    mags: list[float] = []
+    updates: list[float] = []
+    for feat in payload.get("features") or []:
+        props = feat.get("properties") or {}
+        lat, lng = props.get("lat"), props.get("lon")
+        if lat is None or lng is None:
+            continue
+        mag = props.get("mag")
+        upd = _iso_epoch(props.get("lastupdate"))
+        if upd is not None:
+            updates.append(upd)
+        points.append({
+            "lat": round(float(lat), 4), "lng": round(float(lng), 4),
+            "alt_km": 0.0,
+            "label": f"M{mag} {props.get('flynn_region') or ''}".strip(),
+            "mag": mag,
+            "time_epoch": _iso_epoch(props.get("time")),
+            "depth_km": props.get("depth"),
+            "place": props.get("flynn_region"),
+            "source_id": props.get("unid"),
+            "auth": props.get("auth"),
+        })
+        if isinstance(mag, (int, float)):
+            mags.append(float(mag))
+    return {
+        "points": points,
+        "count": len(points),
+        "max_mag": max(mags) if mags else None,
+        "count_m45_plus": sum(1 for m in mags if m >= 4.5),
+        "feed_epoch": max(updates) if updates else None,
+    }
+
+
+def fetch_emsc() -> dict:
+    payload, fetch = _fetch_json(emsc_url(time.time()), timeout=120.0)
+    parsed = parse_emsc(payload)
+    parsed["_fetch"] = fetch
+    return parsed
+
+
+# --------------------------------------------------------------------------
+# Fintraffic Digitraffic — AIS vessel locations, Finnish/Baltic waters
+# (CC BY 4.0; attribution string in DATA_SOURCES.md). Regional by design.
+# --------------------------------------------------------------------------
+
+def parse_ais(payload: dict) -> dict:
+    points: list[dict] = []
+    for feat in payload.get("features") or []:
+        coords = (feat.get("geometry") or {}).get("coordinates") or []
+        props = feat.get("properties") or {}
+        if len(coords) < 2 or coords[0] is None or coords[1] is None:
+            continue
+        points.append({
+            "lat": round(float(coords[1]), 4), "lng": round(float(coords[0]), 4),
+            "alt_km": 0.0,
+            "label": f"vessel MMSI {props.get('mmsi')}",
+            "mmsi": props.get("mmsi"),
+            "sog_kn": props.get("sog"), "cog": props.get("cog"),
+            "heading": props.get("heading"),
+        })
+    lats = [p["lat"] for p in points]
+    lngs = [p["lng"] for p in points]
+    return {
+        "points": points,
+        "count": len(points),
+        "feed_epoch": _iso_epoch(payload.get("dataUpdatedTime")),
+        "bbox": ({"lat_min": min(lats), "lat_max": max(lats),
+                  "lng_min": min(lngs), "lng_max": max(lngs)}
+                 if points else None),
+    }
+
+
+def fetch_ais() -> dict:
+    payload, fetch = _fetch_json(AIS_URL, timeout=120.0)
+    parsed = parse_ais(payload)
+    parsed["_fetch"] = fetch
+    return parsed
+
+
+# --------------------------------------------------------------------------
+# NOAA NDBC — moored buoy latest observations (fixed-format text)
+# --------------------------------------------------------------------------
+
+def parse_ndbc(text: str) -> dict:
+    points: list[dict] = []
+    epochs: list[float] = []
+    for line in text.splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 8:
+            continue
+        try:
+            lat, lng = float(parts[1]), float(parts[2])
+            year, mo, dd = int(parts[3]), int(parts[4]), int(parts[5])
+            hh, mm = int(parts[6]), int(parts[7])
+            epoch = datetime(year, mo, dd, hh, mm,
+                             tzinfo=timezone.utc).timestamp()
+        except (ValueError, IndexError):
+            continue
+        epochs.append(epoch)
+        points.append({
+            "lat": round(lat, 3), "lng": round(lng, 3), "alt_km": 0.0,
+            "label": f"buoy {parts[0]}",
+            "station": parts[0], "time_epoch": epoch,
+            "wind_dir": parts[8] if len(parts) > 8 else None,
+            "wind_ms": parts[9] if len(parts) > 9 else None,
+            "water_temp_c": parts[14] if len(parts) > 14 else None,
+        })
+    return {"points": points, "count": len(points),
+            "feed_epoch": max(epochs) if epochs else None}
+
+
+def fetch_ndbc() -> dict:
+    body, latency_ms, _ = _fetch(NDBC_URL)
+    parsed = parse_ndbc(body.decode("utf-8", "replace"))
+    parsed["_fetch"] = {"latency_ms": latency_ms, "response_bytes": len(body)}
+    return parsed
+
+
+# --------------------------------------------------------------------------
+# NIFC WFIGS — current US wildland-fire incident locations (ArcGIS REST).
+# The "current" layer includes prescribed burns (names ending RX) — the
+# receipt says so; an incident point is a dispatch record, not a flame.
+# --------------------------------------------------------------------------
+
+def parse_wfigs(payload: dict) -> dict:
+    points: list[dict] = []
+    acres: list[float] = []
+    rx = 0
+    for feat in payload.get("features") or []:
+        coords = (feat.get("geometry") or {}).get("coordinates") or []
+        props = feat.get("properties") or {}
+        if len(coords) < 2 or coords[0] is None or coords[1] is None:
+            continue
+        name = props.get("IncidentName") or "unnamed incident"
+        size = props.get("IncidentSize")
+        if isinstance(size, (int, float)):
+            acres.append(float(size))
+        if " RX" in name.upper() or name.upper().endswith("RX"):
+            rx += 1
+        disc = props.get("FireDiscoveryDateTime")
+        points.append({
+            "lat": round(float(coords[1]), 4), "lng": round(float(coords[0]), 4),
+            "alt_km": 0.0,
+            "label": (f"{name} ({props.get('POOState') or 'US'})"
+                      + (f" — {size} acres" if size else "")),
+            "name": name, "acres": size,
+            "contained_pct": props.get("PercentContained"),
+            "state": props.get("POOState"),
+            "time_epoch": (disc / 1000.0) if isinstance(disc, (int, float)) else None,
+        })
+    return {
+        "points": points,
+        "count": len(points),
+        "total_acres": round(sum(acres), 1),
+        "largest_acres": max(acres) if acres else None,
+        "rx_count": rx,
+    }
+
+
+def fetch_wfigs() -> dict:
+    payload, fetch = _fetch_json(WFIGS_URL, timeout=120.0)
+    parsed = parse_wfigs(payload)
+    parsed["_fetch"] = fetch
     return parsed

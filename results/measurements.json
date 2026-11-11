@@ -1,48 +1,127 @@
 {
-  "measured_at_unix": 1794369116.8758726,
+  "measured_at_unix": 1794370789.7137222,
   "layers": {
     "flights": {
       "source": "OpenSky Network /api/states/all (anonymous)",
-      "response_bytes": 821216,
-      "fetch_latency_ms": 2657,
-      "feed_epoch": 1794369110,
-      "staleness_s_at_fetch": 9.6,
-      "states_total": 6259,
-      "positioned": 6210,
-      "on_ground": 757,
+      "response_bytes": 776454,
+      "fetch_latency_ms": 2390,
+      "feed_epoch": 1794370783,
+      "staleness_s_at_fetch": 9.1,
+      "states_total": 5922,
+      "positioned": 5879,
+      "on_ground": 661,
       "median_position_age_s": 1,
       "coverage": {
         "probe_boxes": {
-          "Continental US": 3139,
-          "Europe": 548,
-          "Mid-Atlantic": 6,
-          "Mid-Pacific": 27,
-          "Indian Ocean": 0,
-          "Southern Ocean": 25
+          "Continental US": 2728,
+          "Europe": 654,
+          "Mid-Atlantic": 3,
+          "Mid-Pacific": 17,
+          "Indian Ocean": 1,
+          "Southern Ocean": 17
         },
-        "ocean_box_aircraft": 58,
-        "land_box_aircraft": 3687,
-        "ocean_share_of_all_pct": 0.93
+        "ocean_box_aircraft": 38,
+        "land_box_aircraft": 3382,
+        "ocean_share_of_all_pct": 0.65
       }
     },
     "satellites": {
       "source": "CelesTrak GP, GROUP=active, FORMAT=tle",
       "response_bytes": 2668176,
-      "fetch_latency_ms": 3013,
+      "fetch_latency_ms": 6456,
       "elements_total": 15882,
       "propagated_ok": 15882,
       "propagation_failed": 0,
-      "median_epoch_age_h": 25.564163825644385
+      "median_epoch_age_h": 26.029722804228467,
+      "sublayers": {
+        "starlink_in_active_by_name": 10619,
+        "starlink_group_elements": 10619,
+        "stations_group_elements": 15,
+        "stations_group_propagated": 15
+      }
     },
     "earthquakes": {
       "source": "USGS 2.5_day GeoJSON",
-      "response_bytes": 25236,
-      "fetch_latency_ms": 1293,
-      "feed_epoch": 1794369096.0,
-      "staleness_s_at_fetch": 28.1,
-      "count": 35,
+      "response_bytes": 25921,
+      "fetch_latency_ms": 940,
+      "feed_epoch": 1794370780.0,
+      "staleness_s_at_fetch": 24.9,
+      "count": 36,
       "max_mag": 5.6,
-      "count_m45_plus": 15
+      "count_m45_plus": 16
+    },
+    "quakes_emsc": {
+      "source": "EMSC SeismicPortal FDSN (minmag 2.5, last 24 h)",
+      "response_bytes": 111362,
+      "fetch_latency_ms": 1422,
+      "feed_epoch": 1794370774.914543,
+      "staleness_s_at_fetch": 31.5,
+      "count": 204,
+      "max_mag": 5.6,
+      "count_m45_plus": 17
+    },
+    "vessels": {
+      "source": "Fintraffic Digitraffic AIS /api/ais/v1/locations",
+      "response_bytes": 438615,
+      "fetch_latency_ms": 957,
+      "feed_epoch": 1794370752.0,
+      "staleness_s_at_fetch": 55.4,
+      "count": 1052,
+      "bbox": {
+        "lat_min": 57.5086,
+        "lat_max": 65.7979,
+        "lng_min": 16.5211,
+        "lng_max": 35.8369
+      }
+    },
+    "storms": {
+      "source": "NOAA NHC CurrentStorms.json",
+      "response_bytes": 4626,
+      "fetch_latency_ms": 724,
+      "feed_epoch": 1794366000.0,
+      "staleness_s_at_fetch": 4808.1,
+      "count": 1,
+      "names": [
+        "Pena"
+      ]
+    },
+    "fireballs": {
+      "source": "NASA/JPL CNEOS fireball.api (limit 100)",
+      "response_bytes": 7461,
+      "fetch_latency_ms": 1077,
+      "feed_epoch": 1791083685.0,
+      "staleness_s_at_fetch": 3287124.2,
+      "count": 99,
+      "rows_total": 100,
+      "max_impact_kt": 5.1,
+      "newest_event": "2026-10-04 03:14:45"
+    },
+    "buoys": {
+      "source": "NOAA NDBC latest_obs.txt",
+      "response_bytes": 95676,
+      "fetch_latency_ms": 858,
+      "feed_epoch": 1794369900.0,
+      "staleness_s_at_fetch": 910.0,
+      "count": 802
+    },
+    "wildfires_us": {
+      "source": "NIFC WFIGS Incident Locations Current (ArcGIS REST)",
+      "response_bytes": 124749,
+      "fetch_latency_ms": 1243,
+      "count": 464,
+      "total_acres": 912341.7,
+      "largest_acres": 283283.0,
+      "rx_count": 236
+    },
+    "spaceweather": {
+      "source": "NOAA SWPC planetary_k_index_1m + rtsw_wind_1m",
+      "kp_latest": 0.0,
+      "kp_max_24h": 2.33,
+      "kp_epoch": 1794370560.0,
+      "wind_speed_kms": 527.7,
+      "wind_density_pcc": 0.92,
+      "wind_source": "SOLAR1",
+      "staleness_s_at_fetch": 253.6
     },
     "wildfires": {
       "source": "NASA FIRMS",
@@ -50,10 +129,21 @@
       "reason": "No FIRMS_MAP_KEY configured; key requires the operator's own free signup. Layer ships in the documented off state."
     }
   },
+  "cross_source": {
+    "earthquakes_usgs_vs_emsc": {
+      "usgs_total": 36,
+      "emsc_total": 204,
+      "matched": 32,
+      "usgs_only": 4,
+      "emsc_only": 172,
+      "median_abs_mag_delta": 0.0,
+      "match_rule": "origin time within 120 s and epicentre within 150 km, greedy closest-first"
+    }
+  },
   "claims": [
     {
       "claim": "10,000+ aircraft tracked live",
-      "measured": 6210,
+      "measured": 5879,
       "reading": "The count is a property of the free public feed and the time of day, not of any dashboard's engineering. Our measured count right now is the number above."
     },
     {
@@ -63,8 +153,18 @@
     },
     {
       "claim": "Every earthquake, live",
-      "measured": 35,
+      "measured": 36,
       "reading": "This is the USGS magnitude-2.5+ feed for the last 24 hours: reviewed, delayed by minutes, and blind to smaller events by design."
+    },
+    {
+      "claim": "Every ship, tracked worldwide",
+      "measured": 1052,
+      "reading": "This is one regional open AIS feed \u2014 Finnish and Baltic waters, published by Fintraffic under CC BY 4.0. Global AIS exists, but it is not open; the honest open map has a coastline-shaped hole everywhere else."
+    },
+    {
+      "claim": "All US wildfires, live",
+      "measured": 464,
+      "reading": "This is the interagency incident record (WFIGS): dispatch points, including prescribed burns, updated when incident staff publish \u2014 a records system keeping pace with fires, not a sensor watching them."
     }
   ]
 }

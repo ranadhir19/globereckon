@@ -6,11 +6,14 @@ Stages (each reported PASS/FAIL; the run fails if any stage fails):
   2. test suite (parser tests against recorded-response excerpts,
      receipts math, API smoke in fixture mode);
   3. licence-record check: LICENSE present, DATA_SOURCES.md covers all
-     four feeds and records the OpenSky non-commercial boundary, README
-     states the boundary too;
+     feeds (round 1 and round 2) plus the rejected-source verdicts, and
+     records the OpenSky non-commercial boundary, README states the
+     boundary too;
   4. measurements integrity: results/measurements.json parses and the
      claimed-vs-measured readout equals the layer counts in the same
-     record (the README numbers are the measured numbers);
+     record (the README numbers are the measured numbers); round-2
+     layers are present and the cross-source block is internally
+     consistent (matched + only == each catalogue's total);
   5. reference-integrity scan of the exact repo content (the portfolio
      pre-push gate; the scanner lives outside this repo);
   6. banned-name check: the forbidden portfolio name appears nowhere;
@@ -64,10 +67,13 @@ def main() -> int:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         lic_ok = ("MIT License" in lic
                   and all(s in ds for s in ("OpenSky", "CelesTrak",
-                                            "USGS", "FIRMS"))
+                                            "USGS", "FIRMS",
+                                            "CNEOS", "SWPC", "NHC",
+                                            "EMSC", "Digitraffic",
+                                            "WFIGS", "NDBC", "IODA"))
                   and "non-profit research" in ds
                   and "non-commercial" in readme)
-        detail = "LICENSE + DATA_SOURCES.md cover all four feeds"
+        detail = "LICENSE + DATA_SOURCES.md cover all feeds + verdicts"
     except Exception as exc:  # noqa: BLE001
         lic_ok, detail = False, str(exc)[:160]
     ok &= stage("licence record", lic_ok, detail)
@@ -78,6 +84,7 @@ def main() -> int:
                        .read_text(encoding="utf-8"))
         layers, claims = m["layers"], {c["claim"]: c["measured"]
                                         for c in m["claims"]}
+        cross = m["cross_source"]["earthquakes_usgs_vs_emsc"]
         integ = (
             claims["10,000+ aircraft tracked live"]
             == layers["flights"]["positioned"]
@@ -85,8 +92,29 @@ def main() -> int:
             == layers["satellites"]["propagated_ok"]
             and claims["Every earthquake, live"]
             == layers["earthquakes"]["count"]
-            and layers["wildfires"]["state"] in ("on", "off"))
-        detail = "claims readout equals the measured layer counts"
+            and claims["Every ship, tracked worldwide"]
+            == layers["vessels"]["count"]
+            and claims["All US wildfires, live"]
+            == layers["wildfires_us"]["count"]
+            and layers["wildfires"]["state"] in ("on", "off")
+            and all(k in layers for k in (
+                "quakes_emsc", "storms", "fireballs", "buoys",
+                "spaceweather"))
+            and cross["matched"] + cross["usgs_only"]
+            == cross["usgs_total"] == layers["earthquakes"]["count"]
+            and cross["matched"] + cross["emsc_only"]
+            == cross["emsc_total"] == layers["quakes_emsc"]["count"]
+            # The Starlink group file and the active file publish on
+            # different cycles, so the two independent Starlink counts
+            # must agree within 1% — not byte-exactly. (On the 2026-11-10
+            # run they agreed exactly: 10,619 both ways.)
+            and abs(layers["satellites"]["sublayers"]
+                    ["starlink_group_elements"]
+                    - layers["satellites"]["sublayers"]
+                    ["starlink_in_active_by_name"])
+            <= 0.01 * layers["satellites"]["sublayers"]
+                ["starlink_group_elements"])
+        detail = "claims + cross-source readout equal the measured counts"
     except Exception as exc:  # noqa: BLE001
         integ, detail = False, str(exc)[:160]
     ok &= stage("measurements integrity", integ, detail)

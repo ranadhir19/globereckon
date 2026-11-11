@@ -56,6 +56,16 @@ changing any parser behaviour.
   propagate positions locally with the SGP4 model (python-sgp4, MIT).
   Positions shown are *computed from published element sets* — the demo
   does not "track" anything, and the receipts panel says so.
+- **Round-2 sub-layers (2026-11-10):** the same endpoint family serves
+  `GROUP=stations` and `GROUP=starlink`. The receipt reports them as
+  labelled sub-layers. On the round-2 measurement run the stations
+  group, exactly as served, held 15 element sets (station modules and
+  docked vehicles — the group is small because it is curated, and the
+  receipt says "as served" rather than rounding it up), and the
+  Starlink group held 10,619 sets — exactly the count obtained by
+  counting STARLINK-prefixed names inside the active catalogue on the
+  same run, two independent routes to the same number. Sub-layers
+  overlap the active total; they are not additive.
 
 ## 3. Earthquakes — USGS
 
@@ -85,7 +95,134 @@ changing any parser behaviour.
   parser and the off-state are covered by tests; no key ships with the
   repo.
 
-## 5. Code dependencies (all permissive)
+## 6. Fireballs — NASA/JPL CNEOS (round 2, verified live 2026-11-10)
+
+- **Dataset/endpoint:** `GET https://ssd-api.jpl.nasa.gov/fireball.api?limit=100`
+  — fireball/bolide events reported by US Government sensors, with date,
+  location, altitude, velocity and computed impact energy.
+- **Terms:** NASA/JPL Small-Body Database APIs are public US Government
+  services, published for open research use; no key, no registration.
+  Attribution to NASA/JPL CNEOS is given in the UI.
+- **Live check:** HTTP 200, 100 rows; 99 carried a location (1 row had
+  no reported position and is counted, not plotted).
+- **Verdict: IMPLEMENTED.** Receipt honesty: this is a reviewed event
+  catalogue, not a stream — on the round-2 run the newest of the 100
+  events was dated 2026-10-04, so the layer's feed-age receipt reads in
+  weeks, and the UI says why.
+
+## 7. Space weather — NOAA SWPC (round 2, verified live 2026-11-10)
+
+- **Dataset/endpoints:** planetary K-index
+  `https://services.swpc.noaa.gov/json/planetary_k_index_1m.json` and
+  real-time solar wind `https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json`.
+- **Terms:** NOAA data is US public domain; SWPC publishes these JSON
+  services for public use without a key.
+- **Live check:** both HTTP 200; K-index rows current to the minute;
+  solar-wind rows carry an active spacecraft source (SOLAR1 on the
+  round-2 run) at ~528 km/s.
+- **Verdict: IMPLEMENTED as a panel-only layer.** Space weather is a
+  planetary index with no honest globe coordinates; the demo puts its
+  numbers in the panel and draws no dots for it. (The older
+  `products/solar-wind/plasma-*.json` paths returned 404 on the live
+  check — the RTSW service is the live one, and that is what is wired.)
+
+## 8. Tropical cyclones — NOAA NHC (round 2, verified live 2026-11-10)
+
+- **Dataset/endpoint:** `https://www.nhc.noaa.gov/CurrentStorms.json` —
+  active storms with classification, intensity, pressure, position and
+  links to the official forecast-track and cone files (KMZ).
+- **Terms:** NOAA/NHC products are US public domain, published for
+  public use without a key.
+- **Live check:** HTTP 200 with one active storm (Pena, Central
+  Pacific) on the round-2 run.
+- **Verdict: IMPLEMENTED.** Zero active storms is a normal state for
+  much of the year and is reported as 0. Forecast cones are linked as
+  the official KMZ in each storm's detail card, not redrawn — the
+  geometry stays the forecaster's.
+
+## 9. Earthquakes, second catalogue — EMSC SeismicPortal (CC BY 4.0)
+
+- **Dataset/endpoint:** FDSN event service,
+  `https://www.seismicportal.eu/fdsnws/event/1/query?format=json`
+  (minmag 2.5, trailing 24 h), the EMSC-RTS catalogue aggregating
+  dozens of national agencies.
+- **Terms:** the SeismicPortal terms and the FDSN service page (both
+  checked 2026-11-10) state that datasets and products from the data
+  services are provided under the Creative Commons Attribution 4.0
+  International licence (CC BY 4.0). Credit as prescribed:
+  *EMSC-CSEM SeismicPortal, https://www.seismicportal.eu*.
+- **Live check:** HTTP 200; 204 events in the same 24 h window where
+  USGS listed 36.
+- **Verdict: IMPLEMENTED, and it is the differentiator.** The receipts
+  drawer reconciles the two catalogues event by event (origin time
+  within 120 s and epicentre within 150 km, greedy closest-first):
+  round-2 run — 32 events in both, 4 USGS-only, 172 EMSC-only, median
+  magnitude disagreement on matched events 0.0. Coverage, not error,
+  explains most of the gap; no other demo globe in this genre publishes
+  its own inter-catalogue disagreement.
+
+## 10. Vessels — Fintraffic Digitraffic AIS (CC BY 4.0)
+
+- **Dataset/endpoint:** `https://meri.digitraffic.fi/api/ais/v1/locations`
+  — live AIS vessel locations for Finnish waters.
+- **Terms:** Fintraffic's open data is licensed CC BY 4.0 (Digitraffic
+  terms of service, checked 2026-11-10). Required attribution, used
+  verbatim in the UI and this repo: *Source: Fintraffic /
+  digitraffic.fi, license CC 4.0 BY*.
+- **Live check:** HTTP 200; 1,052 vessels, every one inside the
+  Baltic box (lat 57.5–65.8, lng 16.5–35.8 on the round-2 run).
+- **Verdict: IMPLEMENTED with the region labelled everywhere.** This
+  is a regional feed and the demo says so in the layer name, the card
+  and the claim readout. Global AIS feeds are commercial or key-gated
+  (see section 13); the open globe's ships stop at this coastline, and
+  that boundary is the honest picture.
+
+## 11. US fire incidents — NIFC WFIGS (round 2, verified live 2026-11-10)
+
+- **Dataset/endpoint:** WFIGS Incident Locations (Current), ArcGIS REST
+  FeatureServer on services3.arcgis.com (org T4QMspbfLg3qTGWY), queried
+  as GeoJSON — the public incident-point service behind NIFC's public
+  maps, fed by the IRWIN interagency record.
+- **Terms:** a US federal interagency public service published for
+  public use without a key; NIFC publishes these layers as open data.
+  Attribution to NIFC / WFIGS is given in the UI.
+- **Live check:** HTTP 200; 464 current incident points, 912,342 total
+  reported acres, largest single incident 283,283 acres.
+- **Verdict: IMPLEMENTED as the incident-record counterpart to FIRMS.**
+  Receipt honesty: 236 of the 464 "current incidents" on the round-2
+  run are prescribed burns (names carrying RX) — a dispatch records
+  system, not a sensor net. Incident points are wired; perimeter
+  polygons (a separate WFIGS service, 62 current on the check) are
+  not drawn in this round.
+
+## 12. Ocean buoys — NOAA NDBC (round 2, verified live 2026-11-10)
+
+- **Dataset/endpoint:** `https://www.ndbc.noaa.gov/data/latest_obs/latest_obs.txt`
+  — latest observation per moored station, fixed-format text.
+- **Terms:** NOAA data is US public domain; NDBC publishes the file for
+  public use without a key.
+- **Live check:** HTTP 200; 802 stations with a latest observation.
+- **Verdict: IMPLEMENTED.** The parser is column-positioned text, not
+  JSON — it is covered by a fixture test like every JSON parser here.
+
+## 13. Considered and not wired (dated verdicts, 2026-11-10)
+
+- **IODA (Georgia Tech) — REJECTED for this demo.** The signals API
+  answers (per-country time series), but the outage-events API returns
+  ASN- and country-level events with no coordinates and carries a
+  payload copyright notice reserving rights to the Georgia Tech
+  Research Corporation. There is no honest globe layer here without
+  bolting on an external geolocation dataset and a separate licence
+  review; neither was done, so IODA is recorded, not wired.
+- **AISStream and OpenAQ — KEY-GATED, not wired.** Both need the
+  operator's own API key/registration, the same class as FIRMS. They
+  join the documented optional-key pattern: a future operator can add
+  a key and a parser behind the same honest OFF state. No key was
+  requested or created for this demo.
+- **NOAA SWPC `products/solar-wind/*` JSON paths — DEAD.** Returned
+  404 on the live check; replaced by the RTSW service in section 7.
+
+## 14. Code dependencies (all permissive)
 
 | Dependency | Licence |
 |---|---|
